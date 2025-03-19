@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const baseURL = "https://bsky.social/xrpc/"
@@ -112,9 +113,68 @@ func getLists(username string, authToken string) ([]ListItem, error) {
 	return results.Lists, nil
 }
 
+const listMembersEndpoint = "app.bsky.graph.getList"
+
+type ListMembersResponse struct {
+	Items []ListMember `json:"items"`
+}
+
+type ListMember struct {
+	Subject struct {
+		Handle string `json:"handle"`
+	} `json:"subject"`
+}
+
+func getListMembers(listUri, authToken string) ([]string, error) {
+	queryParams := url.Values{}
+	queryParams.Add("list", listUri)
+
+	parsedURL, err := url.Parse(baseURL + listMembersEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	parsedURL.RawQuery = queryParams.Encode()
+	fullURL := parsedURL.String()
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+authToken)
+	req.Header.Add("Accept", "application/json")
+
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		fmt.Println("Request failed with status code:", response.StatusCode)
+	}
+
+	var results ListMembersResponse
+	decoder := json.NewDecoder(response.Body)
+	err = decoder.Decode(&results)
+	if err != nil {
+		return nil, err
+	}
+
+	var handles []string
+	for _, item := range results.Items {
+		handles = append(handles, item.Subject.Handle)
+	}
+
+	return handles, nil
+}
+
 func main() {
 	username := flag.String("username", "", "Bluesky handle")
 	password := flag.String("password", "", "Bluesky App Password")
+	listName := flag.String("list", "", "List name (optional)")
 	flag.Parse()
 
 	if *username == "" || *password == "" {
@@ -132,7 +192,36 @@ func main() {
 		log.Fatal("Failed:", err)
 	}
 
-	for _, v := range lists {
-		fmt.Println(v.Name)
+	if *listName == "" {
+		fmt.Println("📋", *username, "'s lists:")
+		for _, v := range lists {
+			fmt.Println("-", v.Name)
+		}
+		return
 	}
+
+	var listUri string
+	for _, v := range lists {
+		if strings.EqualFold(v.Name, *listName) {
+			listUri = v.Uri
+			break
+		}
+	}
+
+	if listUri == "" {
+		log.Fatal("❌ Error: List not found:", *listName)
+	}
+
+	// Get members of the selected list
+	members, err := getListMembers(listUri, authToken)
+	if err != nil {
+		log.Fatal("Failed to retrieve list members:", err)
+	}
+
+	// Print members
+	fmt.Println("👥 Users in list:", *listName)
+	for _, handle := range members {
+		fmt.Println("-", handle)
+	}
+
 }
