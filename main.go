@@ -172,6 +172,83 @@ func getListMembers(listUri, authToken string) ([]string, error) {
 	return handles, nil
 }
 
+const followsEndpoint = "app.bsky.graph.getFollows"
+
+type FollowsResponse struct {
+	Follows []struct {
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName"`
+		Description string `json:"description"`
+	} `json:"follows"`
+	Cursor string `json:"cursor"`
+}
+
+func getFollows(username, authToken string) ([]string, error) {
+	var allFollows []string
+	cursor := ""
+
+	client := &http.Client{}
+
+	parsedURL, err := url.Parse(baseURL + followsEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	queryParams := url.Values{}
+	queryParams.Add("actor", username)
+
+	for {
+		if cursor != "" {
+			if queryParams.Get("cursor") != "" {
+				queryParams.Set("cursor", cursor)
+			} else {
+				queryParams.Add("cursor", cursor)
+			}
+		} else if queryParams.Get("cursor") != "" {
+			queryParams.Del("cursor")
+		}
+
+		parsedURL.RawQuery = queryParams.Encode()
+		fullURL := parsedURL.String()
+
+		req, err := http.NewRequest("GET", fullURL, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Add("Authorization", "Bearer "+authToken)
+		req.Header.Add("Accept", "application/json")
+
+		response, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer response.Body.Close()
+
+		if response.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("request failed with status code: %d", response.StatusCode)
+		}
+
+		var results FollowsResponse
+		decoder := json.NewDecoder(response.Body)
+		err = decoder.Decode(&results)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, user := range results.Follows {
+			allFollows = append(allFollows, user.Handle)
+		}
+
+		if results.Cursor == "" {
+			break
+		}
+		cursor = results.Cursor
+	}
+
+	return allFollows, nil
+}
+
 func main() {
 	username := flag.String("username", "", "Bluesky handle")
 	password := flag.String("password", "", "Bluesky App Password")
@@ -226,7 +303,15 @@ func main() {
 	// Print members
 	fmt.Println("👥 Users in list:", *listName)
 	for _, handle := range members {
-		fmt.Println("-", handle)
-	}
+		fmt.Println("-", handle, "follows:")
 
+		follows, err := getFollows(handle, authToken)
+		if err != nil {
+			log.Fatal("Failed to retrieve follows:", err)
+		}
+
+		for _, follow := range follows {
+			fmt.Println("  -", follow)
+		}
+	}
 }
