@@ -11,7 +11,8 @@ import (
 	"net/url"
 )
 
-const authURL = "https://bsky.social/xrpc/com.atproto.server.createSession"
+const baseURL = "https://bsky.social/xrpc/"
+const authEndpoint = "com.atproto.server.createSession"
 
 type AuthRequest struct {
 	Identifier string `json:"identifier"`
@@ -34,7 +35,7 @@ func authenticate(username, password string) (string, error) {
 		return "", err
 	}
 
-	resp, err := http.Post(authURL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := http.Post(baseURL+authEndpoint, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", err
 	}
@@ -57,7 +58,7 @@ func authenticate(username, password string) (string, error) {
 	return authResp.AccessJwt, nil
 }
 
-const listsURL = "https://bsky.social/xrpc/app.bsky.graph.getLists"
+const listsEndpoint = "app.bsky.graph.getLists"
 
 type ListsResponse struct {
 	Lists []ListItem `json:"lists"`
@@ -74,7 +75,7 @@ func getLists(username string, authToken string) ([]ListItem, error) {
 	queryParams := url.Values{}
 	queryParams.Add("actor", username)
 
-	parsedURL, err := url.Parse(listsURL)
+	parsedURL, err := url.Parse(baseURL + listsEndpoint)
 	if err != nil {
 		return nil, err
 	}
