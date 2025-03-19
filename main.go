@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 )
 
 const authURL = "https://bsky.social/xrpc/com.atproto.server.createSession"
@@ -56,6 +57,60 @@ func authenticate(username, password string) (string, error) {
 	return authResp.AccessJwt, nil
 }
 
+const listsURL = "https://bsky.social/xrpc/app.bsky.graph.getLists"
+
+type ListsResponse struct {
+	Lists []ListItem `json:"lists"`
+}
+
+// Struct to parse authentication response
+type ListItem struct {
+	Name string `json:"name"`
+	Uri  string `json:"uri"`
+}
+
+func getLists(username string, authToken string) ([]ListItem, error) {
+
+	queryParams := url.Values{}
+	queryParams.Add("actor", username)
+
+	parsedURL, err := url.Parse(listsURL)
+	if err != nil {
+		return nil, err
+	}
+	parsedURL.RawQuery = queryParams.Encode()
+	fullURL := parsedURL.String()
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+authToken)
+	req.Header.Add("Accept", "application/json")
+
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		fmt.Println("Request failed with status code:", response.StatusCode)
+	}
+	var results ListsResponse
+	decoder := json.NewDecoder(response.Body)
+	err = decoder.Decode(&results)
+	if err != nil {
+		return nil, err
+	}
+
+	return results.Lists, nil
+}
+
 func main() {
 	username := flag.String("username", "", "Bluesky handle")
 	password := flag.String("password", "", "Bluesky App Password")
@@ -66,10 +121,17 @@ func main() {
 		return
 	}
 
-	token, err := authenticate(*username, *password)
+	authToken, err := authenticate(*username, *password)
 	if err != nil {
 		log.Fatal("❌ Authentication failed:", err)
 	}
 
-	fmt.Println("Your access token:", token)
+	lists, err := getLists(*username, authToken)
+	if err != nil {
+		log.Fatal("Failed:", err)
+	}
+
+	for _, v := range lists {
+		fmt.Println(v.Name)
+	}
 }
