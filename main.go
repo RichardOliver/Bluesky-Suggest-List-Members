@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -179,6 +180,10 @@ func main() {
 
 	if *username == "" || *password == "" {
 		fmt.Println("❌ Error: --username and --password are required.")
+		fmt.Println("Usage:")
+		fmt.Printf("%s [flags] [arguments]\n", os.Args[0]) // os.Args[0] is the program name.
+		fmt.Println("Flags:")
+		flag.PrintDefaults()
 		return
 	}
 
