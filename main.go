@@ -271,7 +271,7 @@ func main() {
 
 	lists, err := getLists(*username, authToken)
 	if err != nil {
-		log.Fatal("Failed:", err)
+		log.Fatal("❌ Failed:", err)
 	}
 
 	if *listName == "" {
@@ -297,7 +297,7 @@ func main() {
 	// Get members of the selected list
 	members, err := getListMembers(listUri, authToken)
 	if err != nil {
-		log.Fatal("Failed to retrieve list members:", err)
+		log.Fatal("❌ Failed to retrieve list members:", err)
 	}
 
 	// Print members
@@ -307,7 +307,7 @@ func main() {
 
 		follows, err := getFollows(handle, authToken)
 		if err != nil {
-			log.Fatal("Failed to retrieve follows:", err)
+			log.Fatal("❌ Failed to retrieve follows:", err)
 		}
 
 		for _, follow := range follows {
