@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -13,51 +11,52 @@ import (
 	"strings"
 )
 
-const baseURL = "https://bsky.social/xrpc/"
-const authEndpoint = "com.atproto.server.createSession"
+const baseURL = "https://public.api.bsky.app/xrpc/"
+const resolveHandleEndpoint = "com.atproto.identity.resolveHandle"
 
-type AuthRequest struct {
-	Identifier string `json:"identifier"`
-	Password   string `json:"password"`
+type resolveHandleResponse struct {
+	Did string `json:"did"`
 }
 
-type AuthResponse struct {
-	AccessJwt string `json:"accessJwt"`
-	Handle    string `json:"handle"`
-}
+func resolveHandle(username string) (string, error) {
 
-func authenticate(username, password string) (string, error) {
-	data := AuthRequest{
-		Identifier: username,
-		Password:   password,
-	}
+	queryParams := url.Values{}
+	queryParams.Add("handle", username)
 
-	jsonData, err := json.Marshal(data)
+	parsedURL, err := url.Parse(baseURL + resolveHandleEndpoint)
 	if err != nil {
 		return "", err
 	}
 
-	resp, err := http.Post(baseURL+authEndpoint, "application/json", bytes.NewBuffer(jsonData))
+	parsedURL.RawQuery = queryParams.Encode()
+	fullURL := parsedURL.String()
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	req.Header.Add("Accept", "application/json")
+
+	response, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to authenticate: %s", body)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to fetch user %s: status %d", username, response.StatusCode)
 	}
 
-	var authResp AuthResponse
-	if err := json.Unmarshal(body, &authResp); err != nil {
+	var results resolveHandleResponse
+	if err := json.NewDecoder(response.Body).Decode(&results); err != nil {
 		return "", err
 	}
 
-	return authResp.AccessJwt, nil
+	return results.Did, nil
 }
 
 const listsEndpoint = "app.bsky.graph.getLists"
@@ -72,7 +71,7 @@ type ListItem struct {
 	Uri  string `json:"uri"`
 }
 
-func getLists(username string, authToken string) ([]ListItem, error) {
+func getLists(username string) ([]ListItem, error) {
 
 	queryParams := url.Values{}
 	queryParams.Add("actor", username)
@@ -91,7 +90,6 @@ func getLists(username string, authToken string) ([]ListItem, error) {
 		return nil, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+authToken)
 	req.Header.Add("Accept", "application/json")
 
 	response, err := client.Do(req)
@@ -126,7 +124,7 @@ type ListMember struct {
 	} `json:"subject"`
 }
 
-func getListMembers(listUri, authToken string) ([]string, error) {
+func getListMembers(listUri string) ([]string, error) {
 	queryParams := url.Values{}
 	queryParams.Add("list", listUri)
 
@@ -144,7 +142,6 @@ func getListMembers(listUri, authToken string) ([]string, error) {
 		return nil, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+authToken)
 	req.Header.Add("Accept", "application/json")
 
 	response, err := client.Do(req)
@@ -183,7 +180,7 @@ type FollowsResponse struct {
 	Cursor string `json:"cursor"`
 }
 
-func getFollows(username, authToken string) ([]string, error) {
+func getFollows(username string) ([]string, error) {
 	var allFollows []string
 	cursor := ""
 
@@ -216,7 +213,6 @@ func getFollows(username, authToken string) ([]string, error) {
 			return nil, err
 		}
 
-		req.Header.Add("Authorization", "Bearer "+authToken)
 		req.Header.Add("Accept", "application/json")
 
 		response, err := client.Do(req)
@@ -251,12 +247,11 @@ func getFollows(username, authToken string) ([]string, error) {
 
 func main() {
 	username := flag.String("username", "", "Bluesky handle")
-	password := flag.String("password", "", "Bluesky App Password")
 	listName := flag.String("list", "", "List name (optional)")
 	flag.Parse()
 
-	if *username == "" || *password == "" {
-		fmt.Println("❌ Error: --username and --password are required.")
+	if *username == "" {
+		fmt.Println("❌ Error: --username is required.")
 		fmt.Println("Usage:")
 		fmt.Printf("%s [flags] [arguments]\n", os.Args[0]) // os.Args[0] is the program name.
 		fmt.Println("Flags:")
@@ -264,12 +259,15 @@ func main() {
 		return
 	}
 
-	authToken, err := authenticate(*username, *password)
+	did, err := resolveHandle(*username)
 	if err != nil {
 		log.Fatal("❌ Authentication failed:", err)
 	}
 
-	lists, err := getLists(*username, authToken)
+	log.Println(did)
+
+	lists, err := getLists(did)
+
 	if err != nil {
 		log.Fatal("❌ Failed:", err)
 	}
@@ -283,6 +281,7 @@ func main() {
 	}
 
 	var listUri string
+
 	for _, v := range lists {
 		if strings.EqualFold(v.Name, *listName) {
 			listUri = v.Uri
@@ -295,17 +294,19 @@ func main() {
 	}
 
 	// Get members of the selected list
-	members, err := getListMembers(listUri, authToken)
+	members, err := getListMembers(listUri)
+
 	if err != nil {
 		log.Fatal("❌ Failed to retrieve list members:", err)
 	}
 
 	// Print members
 	fmt.Println("👥 Users in list:", *listName)
+
 	for _, handle := range members {
 		fmt.Println("-", handle, "follows:")
 
-		follows, err := getFollows(handle, authToken)
+		follows, err := getFollows(handle)
 		if err != nil {
 			log.Fatal("❌ Failed to retrieve follows:", err)
 		}
