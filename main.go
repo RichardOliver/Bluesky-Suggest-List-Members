@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -20,39 +19,20 @@ type resolveHandleResponse struct {
 
 func resolveHandle(username string) (string, error) {
 
-	queryParams := url.Values{}
-	queryParams.Add("handle", username)
-
 	parsedURL, err := url.Parse(baseURL + resolveHandleEndpoint)
 	if err != nil {
 		return "", err
 	}
 
+	queryParams := url.Values{}
+	queryParams.Add("handle", username)
 	parsedURL.RawQuery = queryParams.Encode()
-	fullURL := parsedURL.String()
-
-	client := &http.Client{}
-
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Add("Accept", "application/json")
-
-	response, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to fetch user %s: status %d", username, response.StatusCode)
-	}
+	fullUrl := parsedURL.String()
 
 	var results resolveHandleResponse
-	if err := json.NewDecoder(response.Body).Decode(&results); err != nil {
+
+	err = doRequest(http.MethodGet, fullUrl, nil, &results)
+	if err != nil {
 		return "", err
 	}
 
@@ -62,49 +42,29 @@ func resolveHandle(username string) (string, error) {
 const listsEndpoint = "app.bsky.graph.getLists"
 
 type ListsResponse struct {
-	Lists []ListItem `json:"lists"`
+	Cursor string     `json:"cursor"`
+	Lists  []ListItem `json:"lists"`
 }
 
-// Struct to parse authentication response
 type ListItem struct {
 	Name string `json:"name"`
 	Uri  string `json:"uri"`
 }
 
 func getLists(username string) ([]ListItem, error) {
-
-	queryParams := url.Values{}
-	queryParams.Add("actor", username)
-
 	parsedURL, err := url.Parse(baseURL + listsEndpoint)
 	if err != nil {
 		return nil, err
 	}
+
+	queryParams := url.Values{}
+	queryParams.Add("actor", username)
 	parsedURL.RawQuery = queryParams.Encode()
-	fullURL := parsedURL.String()
+	fullUrl := parsedURL.String()
 
-	client := &http.Client{}
-
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Accept", "application/json")
-
-	response, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		fmt.Println("Request failed with status code:", response.StatusCode)
-	}
 	var results ListsResponse
-	decoder := json.NewDecoder(response.Body)
-	err = decoder.Decode(&results)
+	// TODO: Refactor this to loop with the cursor
+	err = doRequest(http.MethodGet, fullUrl, nil, &results)
 	if err != nil {
 		return nil, err
 	}
@@ -125,38 +85,19 @@ type ListMember struct {
 }
 
 func getListMembers(listUri string) ([]string, error) {
-	queryParams := url.Values{}
-	queryParams.Add("list", listUri)
-
 	parsedURL, err := url.Parse(baseURL + listMembersEndpoint)
 	if err != nil {
 		return nil, err
 	}
+
+	queryParams := url.Values{}
+	queryParams.Add("list", listUri)
 	parsedURL.RawQuery = queryParams.Encode()
-	fullURL := parsedURL.String()
-
-	client := &http.Client{}
-
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Accept", "application/json")
-
-	response, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		fmt.Println("Request failed with status code:", response.StatusCode)
-	}
+	fullUrl := parsedURL.String()
 
 	var results ListMembersResponse
-	decoder := json.NewDecoder(response.Body)
-	err = decoder.Decode(&results)
+	// TODO: Refactor this to loop with the cursor
+	err = doRequest(http.MethodGet, fullUrl, nil, &results)
 	if err != nil {
 		return nil, err
 	}
@@ -186,8 +127,6 @@ func getFollows(username string) ([]Follower, error) {
 	var allFollows []Follower
 	cursor := ""
 
-	client := &http.Client{}
-
 	parsedURL, err := url.Parse(baseURL + followsEndpoint)
 	if err != nil {
 		return nil, err
@@ -203,33 +142,14 @@ func getFollows(username string) ([]Follower, error) {
 			} else {
 				queryParams.Add("cursor", cursor)
 			}
-		} else if queryParams.Get("cursor") != "" {
-			queryParams.Del("cursor")
 		}
 
 		parsedURL.RawQuery = queryParams.Encode()
-		fullURL := parsedURL.String()
-
-		req, err := http.NewRequest("GET", fullURL, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Add("Accept", "application/json")
-
-		response, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer response.Body.Close()
-
-		if response.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("request failed with status code: %d", response.StatusCode)
-		}
+		fullUrl := parsedURL.String()
 
 		var results FollowsResponse
-		decoder := json.NewDecoder(response.Body)
-		err = decoder.Decode(&results)
+		// TODO: Refactor this to loop with the cursor
+		err = doRequest(http.MethodGet, fullUrl, nil, &results)
 		if err != nil {
 			return nil, err
 		}
@@ -240,33 +160,10 @@ func getFollows(username string) ([]Follower, error) {
 			break
 		}
 		cursor = results.Cursor
+
 	}
 
 	return allFollows, nil
-}
-
-func stringInSliceIgnoreCase(a string, list []string) bool {
-	for _, b := range list {
-		if strings.EqualFold(a, b) {
-			return true
-		}
-	}
-	return false
-}
-
-func incrementOrAdd(followerCount *[]followerWithCount, follower Follower) {
-	for i, pair := range *followerCount {
-		if pair.Follower == follower {
-			(*followerCount)[i].Count++
-			return
-		}
-	}
-	*followerCount = append(*followerCount, followerWithCount{Follower: follower, Count: 1})
-}
-
-type followerWithCount struct {
-	Follower Follower
-	Count    int
 }
 
 func main() {
@@ -333,9 +230,9 @@ func main() {
 
 		for _, follow := range follows {
 			// Skip if the follow is already in the list (pehaps refactor this to a function)
-			if follow.Handle == "bsky.app" || stringInSliceIgnoreCase(follow.Handle, members) {
-				continue
-			}
+			//if follow.Handle == "bsky.app" || stringInSliceIgnoreCase(follow.Handle, members) {
+			//	continue
+			//}
 
 			if followCount[follow] == 0 {
 				followCount[follow] = 1
@@ -345,7 +242,6 @@ func main() {
 		}
 	}
 
-	fmt.Println("Gopher's Diner Breakfast Menu")
 	for follower, count := range followCount {
 		if count > 1 {
 			fmt.Printf("(%d) %q - %q\n", count, follower.DisplayName, follower.Handle)
