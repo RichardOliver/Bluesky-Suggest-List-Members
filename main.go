@@ -172,16 +172,18 @@ func getListMembers(listUri string) ([]string, error) {
 const followsEndpoint = "app.bsky.graph.getFollows"
 
 type FollowsResponse struct {
-	Follows []struct {
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName"`
-		Description string `json:"description"`
-	} `json:"follows"`
-	Cursor string `json:"cursor"`
+	Follows []Follower `json:"follows"`
+	Cursor  string     `json:"cursor"`
 }
 
-func getFollows(username string) ([]string, error) {
-	var allFollows []string
+type Follower struct {
+	Handle      string `json:"handle"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+}
+
+func getFollows(username string) ([]Follower, error) {
+	var allFollows []Follower
 	cursor := ""
 
 	client := &http.Client{}
@@ -232,9 +234,7 @@ func getFollows(username string) ([]string, error) {
 			return nil, err
 		}
 
-		for _, user := range results.Follows {
-			allFollows = append(allFollows, user.Handle)
-		}
+		allFollows = append(allFollows, results.Follows...)
 
 		if results.Cursor == "" {
 			break
@@ -243,6 +243,30 @@ func getFollows(username string) ([]string, error) {
 	}
 
 	return allFollows, nil
+}
+
+func stringInSliceIgnoreCase(a string, list []string) bool {
+	for _, b := range list {
+		if strings.EqualFold(a, b) {
+			return true
+		}
+	}
+	return false
+}
+
+func incrementOrAdd(followerCount *[]followerWithCount, follower Follower) {
+	for i, pair := range *followerCount {
+		if pair.Follower == follower {
+			(*followerCount)[i].Count++
+			return
+		}
+	}
+	*followerCount = append(*followerCount, followerWithCount{Follower: follower, Count: 1})
+}
+
+type followerWithCount struct {
+	Follower Follower
+	Count    int
 }
 
 func main() {
@@ -259,14 +283,12 @@ func main() {
 		return
 	}
 
-	did, err := resolveHandle(*username)
+	decentralizedIdentifier, err := resolveHandle(*username)
 	if err != nil {
 		log.Fatal("❌ Authentication failed:", err)
 	}
 
-	log.Println(did)
-
-	lists, err := getLists(did)
+	lists, err := getLists(decentralizedIdentifier)
 
 	if err != nil {
 		log.Fatal("❌ Failed:", err)
@@ -293,26 +315,42 @@ func main() {
 		log.Fatal("❌ Error: List not found:", *listName)
 	}
 
-	// Get members of the selected list
 	members, err := getListMembers(listUri)
 
 	if err != nil {
 		log.Fatal("❌ Failed to retrieve list members:", err)
 	}
 
-	// Print members
 	fmt.Println("👥 Users in list:", *listName)
 
-	for _, handle := range members {
-		fmt.Println("-", handle, "follows:")
+	followCount := make(map[Follower]int)
 
+	for _, handle := range members {
 		follows, err := getFollows(handle)
 		if err != nil {
 			log.Fatal("❌ Failed to retrieve follows:", err)
 		}
 
 		for _, follow := range follows {
-			fmt.Println("  -", follow)
+			// Skip if the follow is already in the list (pehaps refactor this to a function)
+			if follow.Handle == "bsky.app" || stringInSliceIgnoreCase(follow.Handle, members) {
+				continue
+			}
+
+			if followCount[follow] == 0 {
+				followCount[follow] = 1
+			} else {
+				followCount[follow]++
+			}
+		}
+	}
+
+	fmt.Println("Gopher's Diner Breakfast Menu")
+	for follower, count := range followCount {
+		if count > 1 {
+			fmt.Printf("(%d) %q - %q\n", count, follower.DisplayName, follower.Handle)
+			fmt.Println("      ", follower.Description)
+			fmt.Println()
 		}
 	}
 }
