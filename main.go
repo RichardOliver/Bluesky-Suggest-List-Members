@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -9,8 +10,14 @@ import (
 )
 
 func main() {
+	var verbose bool
+	var jsonOutput bool
 	username := flag.String("username", "", "Bluesky handle")
 	listName := flag.String("list", "", "List name (optional)")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
+	flag.BoolVar(&verbose, "v", false, "Enable verbose output (shorthand)")
+	flag.BoolVar(&jsonOutput, "json", false, "Enable JSON output")
+	flag.BoolVar(&jsonOutput, "j", false, "Enable JSON output (shorthand)")
 	flag.Parse()
 
 	if *username == "" {
@@ -83,11 +90,37 @@ func main() {
 			}
 		}
 	}
+	// TODO: filter results - remove bsky.app and the list members - and potentially any the user is following (put that behind a flag)
+	// TODO: sort results by count
+	//       to sort the results convert the map to a slice of structs then sort that
+	// TODO: add a flag for verbose output
+	// TODO: add a flag to parallelize the requests
+	// TODO: add cursor support to the getlists and getlistmembers functions
+	sortedList := sortFollowCount(followCount)
+	if jsonOutput {
+		outputJSON(sortedList)
+		return
+	} else {
+		outputText(sortedList)
+		return
+	}
+}
 
-	for follower, count := range followCount {
-		if count > 1 {
-			fmt.Printf("(%d) %q - %q\n", count, follower.DisplayName, follower.Handle)
-			fmt.Println("      ", follower.Description)
+func outputJSON(sortedList KeyValueList) {
+	// Output as JSON
+	jsonData, err := json.MarshalIndent(sortedList, "", "  ")
+	if err != nil {
+		log.Fatal("❌ Failed to marshal JSON:", err)
+	}
+	fmt.Println(string(jsonData))
+}
+
+func outputText(sortedList KeyValueList) {
+	// Output as text
+	for _, kv := range sortedList {
+		if kv.Value > 1 {
+			fmt.Printf("(%d) %q - %q\n", kv.Value, kv.Key.DisplayName, kv.Key.Handle)
+			fmt.Println("      ", kv.Key.Description)
 			fmt.Println()
 		}
 	}
