@@ -35,7 +35,6 @@ func main() {
 	}
 
 	lists, err := getLists(decentralizedIdentifier)
-
 	if err != nil {
 		log.Fatal("❌ Failed:", err)
 	}
@@ -49,7 +48,6 @@ func main() {
 	}
 
 	var listUri string
-
 	for _, v := range lists {
 		if strings.EqualFold(v.Name, *listName) {
 			listUri = v.Uri
@@ -62,7 +60,6 @@ func main() {
 	}
 
 	members, err := getListMembers(listUri)
-
 	if err != nil {
 		log.Fatal("❌ Failed to retrieve list members:", err)
 	}
@@ -78,11 +75,6 @@ func main() {
 		}
 
 		for _, follow := range follows {
-			// Skip if the follow is already in the list (pehaps refactor this to a function)
-			//if follow.Handle == "bsky.app" || stringInSliceIgnoreCase(follow.Handle, members) {
-			//	continue
-			//}
-
 			if followCount[follow] == 0 {
 				followCount[follow] = 1
 			} else {
@@ -90,12 +82,15 @@ func main() {
 			}
 		}
 	}
-	// TODO: filter results - remove bsky.app and the list members - and potentially any the user is following (put that behind a flag)
-	// TODO: sort results by count
-	//       to sort the results convert the map to a slice of structs then sort that
+
+	usersFollows, err := getFollows(*username)
+	if err != nil {
+		log.Fatal("❌ Failed to retrieve user's follows:", err)
+	}
+	// TODO: improve the performace of filterFollows
 	// TODO: add a flag for verbose output
 	// TODO: add a flag to parallelize the requests
-	// TODO: add cursor support to the getlists and getlistmembers functions
+	followCount = filterFollows(followCount, 1, members, usersFollows)
 	sortedList := sortFollowCount(followCount)
 	if jsonOutput {
 		outputJSON(sortedList)
