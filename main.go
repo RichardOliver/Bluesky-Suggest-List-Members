@@ -12,13 +12,20 @@ import (
 func main() {
 	var verbose bool
 	var jsonOutput bool
+	var version bool
 	username := flag.String("username", "", "Bluesky handle")
 	listName := flag.String("list", "", "List name (optional)")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output (shorthand)")
 	flag.BoolVar(&jsonOutput, "json", false, "Enable JSON output")
 	flag.BoolVar(&jsonOutput, "j", false, "Enable JSON output (shorthand)")
+	flag.BoolVar(&version, "version", false, "Print version information")
 	flag.Parse()
+
+	if version {
+		fmt.Println("followsTools v0.1.0")
+		return
+	}
 
 	if *username == "" {
 		fmt.Println("❌ Error: --username is required.")
@@ -101,9 +108,27 @@ func main() {
 	}
 }
 
+type UserWithCount struct {
+	Handle      string `json:"handle"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	Count       int    `json:"count"`
+}
+
 func outputJSON(sortedList KeyValueList) {
+	// Convert to a slice of UserWithCount
+	var userList []UserWithCount
+	for _, kv := range sortedList {
+		userList = append(userList, UserWithCount{
+			Handle:      kv.Key.Handle,
+			DisplayName: kv.Key.DisplayName,
+			Description: kv.Key.Description,
+			Count:       kv.Value,
+		})
+	}
+
 	// Output as JSON
-	jsonData, err := json.MarshalIndent(sortedList, "", "  ")
+	jsonData, err := json.MarshalIndent(userList, "", "  ")
 	if err != nil {
 		log.Fatal("❌ Failed to marshal JSON:", err)
 	}
